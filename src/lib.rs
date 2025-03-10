@@ -1,8 +1,15 @@
 use crossterm::{
     cursor::{
-        MoveTo
+        MoveTo,
+        Hide,
+        Show,
     },
-    event::read,
+    event::{
+        read,
+        poll,
+        Event,
+        KeyCode,
+    },
     execute,
     queue,
     style::{
@@ -10,18 +17,25 @@ use crossterm::{
         ResetColor,
         SetBackgroundColor,
         SetForegroundColor,
-        Print
+        Print,
     },
     terminal::{
         EnterAlternateScreen,
         LeaveAlternateScreen,
         enable_raw_mode,
         disable_raw_mode,
-        size
+        size,
         },
     };
+use std::{
+    io::{
+        stdout,
+        Result,
+        Write
+    },
+    time::Duration,
+    };
 
-use std::io::{stdout, Result, Write};
 
 #[derive(Copy, Clone)]
 pub enum Cell {
@@ -29,17 +43,20 @@ pub enum Cell {
     Dead
 }
 
+
 pub struct Board {
     pub width: u16,
     pub height: u16,
     cells: Vec<Vec<Cell>>
 }
 
+
 pub struct Game {
     pub board: Board,
     pub speed: u32,
     pub pause: bool
 }
+
 
 impl Board {
     pub fn new(width: u16, height: u16) -> Board {
@@ -87,7 +104,16 @@ impl Board {
         stdout().flush()?;
         Ok(())
     }
+
+    pub fn clear(&mut self) {
+        for r in self.cells.iter_mut() {
+            for c in r.iter_mut() {
+                *c = Cell::Dead;
+            }
+        }
+    }
 }
+
 
 impl Game {
     pub fn new() -> Result<Game> {
@@ -100,22 +126,47 @@ impl Game {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        execute!(stdout(), EnterAlternateScreen)?;
+        execute!(stdout(), EnterAlternateScreen, Hide)?;
         enable_raw_mode()?;
 
+        /*
         self.board.set(0, 0, Cell::Alive(Color::Grey));
         self.board.set(2, 0, Cell::Alive(Color::Red));
         self.board.set(0, 2, Cell::Alive(Color::Blue));
-
+        */
         self.board.render()?;
-
         stdout().flush()?;
 
-        read()?;
+        loop {
 
-        execute!(stdout(), LeaveAlternateScreen)?;
+            self.board.clear();
+
+            if let Some(Event::Key(key)) = Self::wait_event(1000) {
+                if let KeyCode::Char(c) = key.code {
+                    if c == 'q' {
+                        break;
+                    } else {
+                        self.board.set(0, 0, Cell::Alive(Color::Red));
+                    }
+                }
+            }
+
+            self.board.render()?;
+            stdout().flush()?;
+        }
+
+        execute!(stdout(), LeaveAlternateScreen, Show)?;
         disable_raw_mode()?;
 
         Ok(())
+    }
+
+    fn wait_event(delay: u64) -> Option<Event> {
+        if poll(Duration::from_millis(delay)).unwrap_or(false) {
+            if let Ok(event) = read() {
+                return Some(event);
+            }
+        }
+        None
     }
 }
