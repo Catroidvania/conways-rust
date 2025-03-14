@@ -4,28 +4,30 @@ use crossterm::{
         Hide,
         Show,
     },
-    event::{
+    event::*/*{
         read,
         poll,
         Event,
         KeyCode,
-    },
+        MouseEventKind,
+        MouseButton,
+    }*/,
     execute,
     queue,
-    style::{
+    style::*/*{
         Color,
         ResetColor,
         SetBackgroundColor,
         SetForegroundColor,
         Print,
-    },
-    terminal::{
+    }*/,
+    terminal::*/*{
         EnterAlternateScreen,
         LeaveAlternateScreen,
         enable_raw_mode,
         disable_raw_mode,
         size,
-        },
+        }*/,
     };
 use std::{
     io::{
@@ -101,7 +103,6 @@ impl Board {
             queue!(stdout(), ResetColor, MoveTo(0, y))?;
         }
 
-        stdout().flush()?;
         Ok(())
     }
 
@@ -125,8 +126,21 @@ impl Game {
         })
     }
 
+    pub fn render(&mut self) -> Result<()> {
+
+        self.board.render()?;
+        queue!(stdout(), MoveTo(0, self.board.height-1), Print("Speed: "))?;
+
+        if self.pause {
+            queue!(stdout(), Print("PAUSE"))?;
+        } else {
+            queue!(stdout(), Print(self.speed.to_string()))?;
+        }
+        Ok(())
+    }
+
     pub fn run(&mut self) -> Result<()> {
-        execute!(stdout(), EnterAlternateScreen, Hide)?;
+        execute!(stdout(), EnterAlternateScreen, Hide, EnableMouseCapture)?;
         enable_raw_mode()?;
 
         /*
@@ -134,28 +148,53 @@ impl Game {
         self.board.set(2, 0, Cell::Alive(Color::Red));
         self.board.set(0, 2, Cell::Alive(Color::Blue));
         */
-        self.board.render()?;
+        self.render()?;
         stdout().flush()?;
 
-        loop {
+        'main: loop {
 
-            self.board.clear();
+            //self.board.clear();
 
-            if let Some(Event::Key(key)) = Self::wait_event(1000) {
-                if let KeyCode::Char(c) = key.code {
-                    if c == 'q' {
-                        break;
-                    } else {
-                        self.board.set(0, 0, Cell::Alive(Color::Red));
-                    }
+            while let Some(event) = Self::wait_event(20) {
+                match event {
+                    Event::Key(k_event) => {
+                        if let KeyCode::Char(c) = k_event.code {
+                            match c {
+                                'q' => {
+                                    break 'main;
+                                },
+                                'p' => {
+                                    self.pause = !self.pause;
+                                },
+                                _ => {},
+                            }
+                        }
+                    },
+                    Event::Mouse(m_event) => {
+                        match m_event.kind {
+                            MouseEventKind::Down(btn) | MouseEventKind::Drag(btn) => {
+                                match btn {
+                                    MouseButton::Left => {
+                                        self.board.set(m_event.column, m_event.row, Cell::Alive(Color::Blue));
+                                    },
+                                    MouseButton::Right => {
+                                        self.board.set(m_event.column, m_event.row, Cell::Dead);
+                                    },
+                                    _ => {},
+                                }
+                            },
+                            _ => {},
+                        }
+                    },
+                    _ => {},
                 }
             }
 
-            self.board.render()?;
+            self.render()?;
             stdout().flush()?;
         }
 
-        execute!(stdout(), LeaveAlternateScreen, Show)?;
+        execute!(stdout(), LeaveAlternateScreen, Show, DisableMouseCapture)?;
         disable_raw_mode()?;
 
         Ok(())
