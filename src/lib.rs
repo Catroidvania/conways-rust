@@ -65,7 +65,7 @@ impl Board {
         Board {
             width,
             height,
-            cells: vec![vec![Cell::Dead; width.into()]; height.into()]
+            cells: vec![vec![Cell::Dead; width as usize]; height as usize]
         }
     }
 
@@ -73,6 +73,50 @@ impl Board {
         if x < self.width && y < self.height {
             self.cells[y as usize][x as usize] = cell;
         }
+    }
+
+    fn count_surrounding(&mut self, x: u16, y: u16) -> u16 {
+        let mut count = 0;
+
+        for xo in -1..=1 {
+            for yo in -1..=1 { 
+                if x == 0 && y == 0 {
+                    continue;
+                }
+
+                let nx = x as i32 + xo;
+                let ny = y as i32 + yo;
+                if nx < 0 || nx >= self.width as i32 || ny < 0 || ny >= self.height as i32 {
+                    continue;
+                }
+
+                if let Cell::Alive(_) = self.cells[ny as usize][nx as usize] {
+                    count += 1;
+                }
+            
+            }
+        }
+        count
+    }
+
+    pub fn update(&mut self) {
+        let mut temp = Board::new(self.width, self.height);
+
+        for x in 0..self.width {
+            for y in 0..self.height {
+                let neighbors = self.count_surrounding(x, y);
+
+                if neighbors == 2 {
+                    if let Cell::Alive(c) = self.cells[y as usize][x as usize] {
+                        temp.set(x, y, Cell::Alive(c));
+                    }
+                } else if neighbors == 3 {
+                    temp.set(x, y, Cell::Alive(Color::Blue));
+                }
+            }
+        }
+
+        self.cells = temp.cells;
     }
 
     pub fn render(&mut self) -> Result<()> {
@@ -127,8 +171,8 @@ impl Game {
     }
 
     pub fn render(&mut self) -> Result<()> {
-
         self.board.render()?;
+
         queue!(stdout(), MoveTo(0, self.board.height-1), Print("Speed: "))?;
 
         if self.pause {
@@ -143,19 +187,16 @@ impl Game {
         execute!(stdout(), EnterAlternateScreen, Hide, EnableMouseCapture)?;
         enable_raw_mode()?;
 
-        /*
-        self.board.set(0, 0, Cell::Alive(Color::Grey));
-        self.board.set(2, 0, Cell::Alive(Color::Red));
-        self.board.set(0, 2, Cell::Alive(Color::Blue));
-        */
         self.render()?;
         stdout().flush()?;
 
         'main: loop {
 
-            //self.board.clear();
+            if !self.pause {
+                self.board.update();
+            }
 
-            while let Some(event) = Self::wait_event(20) {
+            while let Some(event) = Self::wait_event(self.speed as u64) {
                 match event {
                     Event::Key(k_event) => {
                         if let KeyCode::Char(c) = k_event.code {
