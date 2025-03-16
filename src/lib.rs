@@ -35,7 +35,8 @@ use std::{
         Result,
         Write
     },
-    time::Duration,
+    time,
+    thread,
     };
 
 
@@ -55,7 +56,7 @@ pub struct Board {
 
 pub struct Game {
     pub board: Board,
-    pub speed: u32,
+    pub speed: time::Duration,
     pub pause: bool
 }
 
@@ -75,12 +76,12 @@ impl Board {
         }
     }
 
-    fn count_surrounding(&mut self, x: u16, y: u16) -> u16 {
+    fn count_surrounding(&self, x: u16, y: u16) -> u16 {
         let mut count = 0;
 
         for xo in -1..=1 {
             for yo in -1..=1 { 
-                if x == 0 && y == 0 {
+                if xo == 0 && yo == 0 {
                     continue;
                 }
 
@@ -121,17 +122,21 @@ impl Board {
 
     pub fn render(&mut self) -> Result<()> {
         
+        //let mut x = 0;
         let mut y = 0;
         queue!(stdout(), MoveTo(0, 0))?;
         
         for r in self.cells.iter() {
             for c in r.iter() {
+                //let n = self.count_surrounding(x, y);
                 match c {
                     Cell::Alive(color) => {
                         queue!(stdout(),
                             SetForegroundColor(*color),
+                            //SetForegroundColor(Color::Black),
                             SetBackgroundColor(*color),
                             Print("#")
+                            //Print(n.to_string())
                         )?;
                     },
                     Cell::Dead => {
@@ -139,10 +144,13 @@ impl Board {
                             SetForegroundColor(Color::DarkGrey),
                             SetBackgroundColor(Color::Black),
                             Print(".")
+                            //Print(n.to_string())
                         )?;
                     }
                 }
+                //x += 1;
             }
+            //x = 0;
             y += 1;
             queue!(stdout(), ResetColor, MoveTo(0, y))?;
         }
@@ -165,7 +173,7 @@ impl Game {
         let (w, h) = size()?;
         Ok(Game {
             board: Board::new(w, h),
-            speed: 1000,
+            speed: time::Duration::from_millis(200),
             pause: true
         })
     }
@@ -178,7 +186,7 @@ impl Game {
         if self.pause {
             queue!(stdout(), Print("PAUSE"))?;
         } else {
-            queue!(stdout(), Print(self.speed.to_string()))?;
+            queue!(stdout(), Print(self.speed.as_millis().to_string()))?;
         }
         Ok(())
     }
@@ -187,30 +195,21 @@ impl Game {
         execute!(stdout(), EnterAlternateScreen, Hide, EnableMouseCapture)?;
         enable_raw_mode()?;
 
-        self.render()?;
-        stdout().flush()?;
+        let zero = time::Duration::from_millis(0);
+        let mut last_update = time::Instant::now();
 
         'main: loop {
+            
+            self.render()?;
+            stdout().flush()?;
 
-            if !self.pause {
+            if !self.pause && last_update.elapsed() >= self.speed {
+                last_update = time::Instant::now();
                 self.board.update();
             }
 
-            while let Some(event) = Self::wait_event(self.speed as u64) {
+            'input: while let Some(event) = Self::wait_event(zero) {
                 match event {
-                    Event::Key(k_event) => {
-                        if let KeyCode::Char(c) = k_event.code {
-                            match c {
-                                'q' => {
-                                    break 'main;
-                                },
-                                'p' => {
-                                    self.pause = !self.pause;
-                                },
-                                _ => {},
-                            }
-                        }
-                    },
                     Event::Mouse(m_event) => {
                         match m_event.kind {
                             MouseEventKind::Down(btn) | MouseEventKind::Drag(btn) => {
@@ -227,12 +226,34 @@ impl Game {
                             _ => {},
                         }
                     },
+                    Event::Key(k_event) => {
+                        if let KeyCode::Char(c) = k_event.code {
+                            match k_event.kind {
+                                KeyEventKind::Press => match c {
+                                    'q' => {
+                                        break 'main;
+                                    },
+                                    'p' => {
+                                        self.pause = !self.pause;
+                                        last_update = time::Instant::now();
+                                    },
+                                    'c' => {
+                                        self.board.clear();
+                                    }
+                                    _ => {},
+                                },
+                                _ => {}
+                            }
+                        }
+                    },
                     _ => {},
                 }
+
+                self.render()?;
+                stdout().flush()?;
             }
 
-            self.render()?;
-            stdout().flush()?;
+            thread::sleep(time::Duration::from_millis(20));
         }
 
         execute!(stdout(), LeaveAlternateScreen, Show, DisableMouseCapture)?;
@@ -241,8 +262,8 @@ impl Game {
         Ok(())
     }
 
-    fn wait_event(delay: u64) -> Option<Event> {
-        if poll(Duration::from_millis(delay)).unwrap_or(false) {
+    fn wait_event(delay: time::Duration) -> Option<Event> {
+        if poll(delay).unwrap_or(false) {
             if let Ok(event) = read() {
                 return Some(event);
             }
