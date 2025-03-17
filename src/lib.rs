@@ -57,7 +57,8 @@ pub struct Board {
 pub struct Game {
     pub board: Board,
     pub speed: time::Duration,
-    pub pause: bool
+    pub pause: bool,
+    pub color: Color,
 }
 
 
@@ -174,7 +175,8 @@ impl Game {
         Ok(Game {
             board: Board::new(w, h),
             speed: time::Duration::from_millis(200),
-            pause: true
+            pause: true,
+            color: Color::White
         })
     }
 
@@ -208,14 +210,14 @@ impl Game {
                 self.board.update();
             }
 
-            'input: while let Some(event) = Self::wait_event(zero) {
+            while let Some(event) = Self::wait_event(zero) {
                 match event {
                     Event::Mouse(m_event) => {
                         match m_event.kind {
                             MouseEventKind::Down(btn) | MouseEventKind::Drag(btn) => {
                                 match btn {
                                     MouseButton::Left => {
-                                        self.board.set(m_event.column, m_event.row, Cell::Alive(Color::Blue));
+                                        self.board.set(m_event.column, m_event.row, Cell::Alive(self.color));
                                     },
                                     MouseButton::Right => {
                                         self.board.set(m_event.column, m_event.row, Cell::Dead);
@@ -227,33 +229,35 @@ impl Game {
                         }
                     },
                     Event::Key(k_event) => {
-                        if let KeyCode::Char(c) = k_event.code {
-                            match k_event.kind {
-                                KeyEventKind::Press => match c {
-                                    'q' => {
-                                        break 'main;
-                                    },
-                                    'p' => {
-                                        self.pause = !self.pause;
-                                        last_update = time::Instant::now();
-                                    },
-                                    'c' => {
-                                        self.board.clear();
+                        if k_event.kind == KeyEventKind::Press {
+                            match k_event.code {
+                                KeyCode::Char(c) => {
+                                    match c {
+                                        ' ' => {
+                                            self.pause = !self.pause;
+                                            last_update = time::Instant::now();
+                                        },
+                                        _ => {},
                                     }
-                                    _ => {},
+                                },
+                                KeyCode::Esc => {
+                                    break 'main;
+                                },
+                                KeyCode::Backspace | KeyCode::Delete => {
+                                    self.board.clear();
                                 },
                                 _ => {}
                             }
-                        }
+                        }    
                     },
-                    _ => {},
+                    _ => {}
                 }
 
                 self.render()?;
                 stdout().flush()?;
             }
 
-            thread::sleep(time::Duration::from_millis(20));
+            thread::sleep(time::Duration::from_millis(15));
         }
 
         execute!(stdout(), LeaveAlternateScreen, Show, DisableMouseCapture)?;
