@@ -78,7 +78,7 @@ impl Board {
         }
     }
 
-    fn count_surrounding(&self, x: u16, y: u16) -> u16 {
+    fn count_surrounding(&self, x: u16, y: u16) -> Cell {
         let mut colors = HashMap::new();
         let mut count = 0;
         
@@ -100,7 +100,44 @@ impl Board {
                 }
             }
         }
-        count
+
+        match self.cells[y as usize][x as usize] {
+            Cell::Alive(c) => {
+                if count == 2 || count == 3 {
+                    return Cell::Alive(c);
+                }
+            },
+            Cell::Dead => {
+                if count == 3 {
+                    let mut colors = colors.drain();
+
+                    match colors.len() {
+                        1 => {
+                            let (c, _) = colors.nth(0).unwrap_or((Color::Grey, 0));
+                            return Cell::Alive(c);
+                        },
+                        2 => {
+                            let (c1, n1) = colors.nth(0).unwrap_or((Color::Grey, 0));
+                            let (c2, n2) = colors.nth(1).unwrap_or((Color::Grey, 0));
+
+                            if n1 > n2 {
+                                return Cell::Alive(c1);
+                            } else {
+                                return Cell::Alive(c2);
+                            }
+                        },
+                        3 => {
+                            let rand = time::SystemTime::now().elapsed().unwrap().as_millis() % 3;
+                            let (c, _) = colors.nth(rand as usize).unwrap();
+
+                            return Cell::Alive(c);
+                        },
+                        _ => {}
+                    }
+                }
+            }
+        }
+        Cell::Dead
     }
 
     pub fn update(&mut self) {
@@ -108,15 +145,15 @@ impl Board {
 
         for x in 0..self.width {
             for y in 0..self.height {
-                let neighbors = self.count_surrounding(x, y);
-
+                temp.set(x, y, self.count_surrounding(x, y));
+/*
                 if neighbors == 2 {
                     if let Cell::Alive(c) = self.cells[y as usize][x as usize] {
                         temp.set(x, y, Cell::Alive(c));
                     }
                 } else if neighbors == 3 {
                     temp.set(x, y, Cell::Alive(Color::Blue));
-                }
+                }*/
             }
         }
 
@@ -186,7 +223,13 @@ impl Game {
     pub fn render(&mut self) -> Result<()> {
         self.board.render()?;
 
-        queue!(stdout(), MoveTo(0, self.board.height-1), Print("Speed: "))?;
+        queue!(stdout(), 
+            MoveTo(0, self.board.height-1),
+            SetBackgroundColor(self.color),
+            SetForegroundColor(self.color),
+            Print("#"),
+            ResetColor,
+            Print(" Speed: "))?;
 
         if self.pause {
             queue!(stdout(), Print("PAUSE"))?;
