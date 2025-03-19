@@ -30,6 +30,7 @@ use crossterm::{
         }*/,
     };
 use std::{
+    collections::HashMap,
     io::{
         stdout,
         Result,
@@ -78,8 +79,9 @@ impl Board {
     }
 
     fn count_surrounding(&self, x: u16, y: u16) -> u16 {
+        let mut colors = HashMap::new();
         let mut count = 0;
-
+        
         for xo in -1..=1 {
             for yo in -1..=1 { 
                 if xo == 0 && yo == 0 {
@@ -92,10 +94,10 @@ impl Board {
                     continue;
                 }
 
-                if let Cell::Alive(_) = self.cells[ny as usize][nx as usize] {
+                if let Cell::Alive(c) = self.cells[ny as usize][nx as usize] {
+                    *colors.entry(c).or_insert(0) += 1;
                     count += 1;
                 }
-            
             }
         }
         count
@@ -142,8 +144,9 @@ impl Board {
                     },
                     Cell::Dead => {
                         queue!(stdout(),
+                            ResetColor,
                             SetForegroundColor(Color::DarkGrey),
-                            SetBackgroundColor(Color::Black),
+                            //SetBackgroundColor(Color::Black),
                             Print(".")
                             //Print(n.to_string())
                         )?;
@@ -216,16 +219,12 @@ impl Game {
                         match m_event.kind {
                             MouseEventKind::Down(btn) | MouseEventKind::Drag(btn) => {
                                 match btn {
-                                    MouseButton::Left => {
-                                        self.board.set(m_event.column, m_event.row, Cell::Alive(self.color));
-                                    },
-                                    MouseButton::Right => {
-                                        self.board.set(m_event.column, m_event.row, Cell::Dead);
-                                    },
-                                    _ => {},
+                                    MouseButton::Left =>    self.board.set(m_event.column, m_event.row, Cell::Alive(self.color)),
+                                    MouseButton::Right =>   self.board.set(m_event.column, m_event.row, Cell::Dead),
+                                    _ => {}
                                 }
                             },
-                            _ => {},
+                            _ => {}
                         }
                     },
                     Event::Key(k_event) => {
@@ -237,15 +236,19 @@ impl Game {
                                             self.pause = !self.pause;
                                             last_update = time::Instant::now();
                                         },
-                                        _ => {},
+                                        '1' => self.color = Color::White,
+                                        '2' => self.color = Color::Red,
+                                        '3' => self.color = Color::Yellow,
+                                        '4' => self.color = Color::Green,
+                                        '5' => self.color = Color::Blue,
+                                        '6' => self.color = Color::Cyan,
+                                        '7' => self.color = Color::Magenta,
+                                        '8' => self.color = Color::DarkGrey,
+                                        _ => {}
                                     }
                                 },
-                                KeyCode::Esc => {
-                                    break 'main;
-                                },
-                                KeyCode::Backspace | KeyCode::Delete => {
-                                    self.board.clear();
-                                },
+                                KeyCode::Esc => break 'main,
+                                KeyCode::Backspace | KeyCode::Delete => self.board.clear(),
                                 _ => {}
                             }
                         }    
