@@ -41,7 +41,7 @@ use std::{
     };
 
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, Hash, PartialEq)]
 pub enum Cell {
     Alive(Color),
     Dead
@@ -60,6 +60,7 @@ pub struct Game {
     pub speed: time::Duration,
     pub pause: bool,
     pub color: Color,
+    pub population: HashMap<Cell, u32>,
 }
 
 
@@ -120,7 +121,8 @@ impl Board {
                             let (c1, n1) = colors.nth(0).unwrap_or((Color::Grey, 0));
                             let (c2, n2) = colors.nth(1).unwrap_or((Color::Grey, 0));
 
-                            if n1 > n2 {
+                            // ???
+                            if n1 < n2 {
                                 return Cell::Alive(c1);
                             } else {
                                 return Cell::Alive(c2);
@@ -140,24 +142,19 @@ impl Board {
         Cell::Dead
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> HashMap<Cell, u32> {
         let mut temp = Board::new(self.width, self.height);
+        let mut population = HashMap::new();
 
         for x in 0..self.width {
             for y in 0..self.height {
                 temp.set(x, y, self.count_surrounding(x, y));
-/*
-                if neighbors == 2 {
-                    if let Cell::Alive(c) = self.cells[y as usize][x as usize] {
-                        temp.set(x, y, Cell::Alive(c));
-                    }
-                } else if neighbors == 3 {
-                    temp.set(x, y, Cell::Alive(Color::Blue));
-                }*/
+                *population.entry(self.cells[y as usize][x as usize]).or_insert(0) += 1;
             }
         }
 
         self.cells = temp.cells;
+        population
     }
 
     pub fn render(&mut self) -> Result<()> {
@@ -212,11 +209,14 @@ impl Board {
 impl Game {
     pub fn new() -> Result<Game> {
         let (w, h) = size()?;
+        let mut board = Board::new(w, h);
+        let population = board.update();
         Ok(Game {
-            board: Board::new(w, h),
+            board,
             speed: time::Duration::from_millis(200),
             pause: true,
-            color: Color::White
+            color: Color::White,
+            population,
         })
     }
 
@@ -236,6 +236,28 @@ impl Game {
         } else {
             queue!(stdout(), Print(self.speed.as_millis().to_string()))?;
         }
+
+        for (cell, count) in self.population.iter() {
+            match cell {
+                Cell::Dead => {
+                    queue!(stdout(),
+                        SetBackgroundColor(Color::Black),
+                        SetForegroundColor(Color::White),
+                        Print(" Dead: "),
+                        Print(count.to_string()),
+                        ResetColor)?;
+                },
+                Cell::Alive(c) => {
+                    queue!(stdout(), 
+                        Print(" "),
+                        SetBackgroundColor(*c),
+                        SetForegroundColor(Color::Black),
+                        Print(count.to_string()),
+                        ResetColor)?;
+                }            
+            }
+        }
+
         Ok(())
     }
 
@@ -253,7 +275,7 @@ impl Game {
 
             if !self.pause && last_update.elapsed() >= self.speed {
                 last_update = time::Instant::now();
-                self.board.update();
+                self.population = self.board.update();
             }
 
             while let Some(event) = Self::wait_event(zero) {
