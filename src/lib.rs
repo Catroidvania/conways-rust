@@ -39,6 +39,7 @@ use std::{
     time,
     thread,
     };
+use rand;
 
 
 #[derive(Copy, Clone, Eq, Hash, PartialEq)]
@@ -53,7 +54,6 @@ pub struct Board {
     pub height: u16,
     cells: Vec<Vec<Cell>>
 }
-
 
 pub struct Game {
     pub board: Board,
@@ -121,17 +121,15 @@ impl Board {
                             let (c1, n1) = colors.nth(0).unwrap_or((Color::Grey, 0));
                             let (c2, n2) = colors.nth(1).unwrap_or((Color::Grey, 0));
 
-                            // ???
-                            if n1 < n2 {
+                            if n1 > n2 {
                                 return Cell::Alive(c1);
                             } else {
                                 return Cell::Alive(c2);
                             }
                         },
                         3 => {
-                            let rand = time::SystemTime::now().elapsed().unwrap().as_millis() % 3;
-                            let (c, _) = colors.nth(rand as usize).unwrap();
-
+                            let rn: u8 = rand::random();
+                            let (c, _) = colors.nth(rn as usize).unwrap();
                             return Cell::Alive(c);
                         },
                         _ => {}
@@ -159,36 +157,38 @@ impl Board {
 
     pub fn render(&mut self) -> Result<()> {
         
-        //let mut x = 0;
+        let mut x = 0;
         let mut y = 0;
         queue!(stdout(), MoveTo(0, 0))?;
         
         for r in self.cells.iter() {
             for c in r.iter() {
-                //let n = self.count_surrounding(x, y);
+                let test_c = match self.count_surrounding(x, y) {
+                    Cell::Alive(col) => col,
+                    Cell::Dead => Color::DarkGrey
+                };
                 match c {
                     Cell::Alive(color) => {
                         queue!(stdout(),
-                            SetForegroundColor(*color),
-                            //SetForegroundColor(Color::Black),
+                            ResetColor,
+                            //SetForegroundColor(*color),
+                            SetForegroundColor(test_c),
                             SetBackgroundColor(*color),
-                            Print("#")
-                            //Print(n.to_string())
+                            Print("+")
                         )?;
                     },
                     Cell::Dead => {
                         queue!(stdout(),
                             ResetColor,
-                            SetForegroundColor(Color::DarkGrey),
-                            //SetBackgroundColor(Color::Black),
-                            Print(".")
-                            //Print(n.to_string())
+                            //SetForegroundColor(Color::DarkGrey),
+                            SetForegroundColor(test_c),
+                            Print("+")
                         )?;
                     }
                 }
-                //x += 1;
+                x += 1;
             }
-            //x = 0;
+            x = 0;
             y += 1;
             queue!(stdout(), ResetColor, MoveTo(0, y))?;
         }
@@ -238,23 +238,19 @@ impl Game {
         }
 
         for (cell, count) in self.population.iter() {
-            match cell {
-                Cell::Dead => {
-                    queue!(stdout(),
-                        SetBackgroundColor(Color::Black),
-                        SetForegroundColor(Color::White),
-                        Print(" Dead: "),
-                        Print(count.to_string()),
-                        ResetColor)?;
-                },
-                Cell::Alive(c) => {
-                    queue!(stdout(), 
-                        Print(" "),
-                        SetBackgroundColor(*c),
-                        SetForegroundColor(Color::Black),
-                        Print(count.to_string()),
-                        ResetColor)?;
-                }            
+            if let Cell::Alive(c) = cell {
+                let percent = format!("{:.4}%", *count as f64 / (self.board.width * self.board.height) as f64);
+                queue!(stdout(), 
+                    Print(" "),
+                    SetBackgroundColor(*c),
+                    SetForegroundColor(
+                        match c {
+                            Color::DarkGrey | Color::Grey => Color::White,
+                            _ => Color::DarkGrey
+                        }
+                    ),
+                    Print(percent),
+                    ResetColor)?;    
             }
         }
 
