@@ -39,6 +39,7 @@ use std::{
     time,
     thread,
     };
+use itertools::Itertools;
 use rand;
 
 
@@ -60,7 +61,7 @@ pub struct Game {
     pub speed: time::Duration,
     pub pause: bool,
     pub color: Color,
-    pub population: HashMap<Cell, u32>,
+    pub population: HashMap<Color, u64>,
 }
 
 
@@ -79,7 +80,7 @@ impl Board {
         }
     }
 
-    fn count_surrounding(&self, x: u16, y: u16) -> Cell {
+    fn update_cell(&self, x: u16, y: u16) -> (Cell, u8) {
         let mut colors = HashMap::new();
         let mut count = 0;
         
@@ -102,57 +103,67 @@ impl Board {
             }
         }
 
+        let mut new_cell = Cell::Dead;
+        let mut len: u8 = 0;
         match self.cells[y as usize][x as usize] {
             Cell::Alive(c) => {
                 if count == 2 || count == 3 {
-                    return Cell::Alive(c);
+                    new_cell = Cell::Alive(c);
                 }
             },
             Cell::Dead => {
                 if count == 3 {
-                    let mut colors = colors.drain();
+                    len = colors.keys().len() as u8;
+                    let colors: Vec<(Color, u8)> = colors.drain().collect();
 
-                    match colors.len() {
+                    match len {
                         1 => {
-                            let (c, _) = colors.nth(0).unwrap_or((Color::Grey, 0));
-                            return Cell::Alive(c);
+                            let (c, _) = colors[0];
+                            new_cell = Cell::Alive(c);
                         },
                         2 => {
-                            let (c1, n1) = colors.nth(0).unwrap_or((Color::Grey, 0));
-                            let (c2, n2) = colors.nth(1).unwrap_or((Color::Grey, 0));
+                            let (c1, n1) = colors[0];
+                            let (c2, n2) = colors[1];
 
-                            if n1 > n2 {
-                                return Cell::Alive(c1);
-                            } else {
-                                return Cell::Alive(c2);
-                            }
+                            new_cell = Cell::Alive(if n1 > n2 { c1 } else { c2 });
                         },
                         3 => {
                             let rn: u8 = rand::random();
-                            let (c, _) = colors.nth(rn as usize).unwrap();
-                            return Cell::Alive(c);
+                            let (c, _) = colors[(rn % 3) as usize];
+                            new_cell = Cell::Alive(c);
                         },
                         _ => {}
                     }
                 }
             }
         }
-        Cell::Dead
+        (new_cell, len)
     }
 
-    pub fn update(&mut self) -> HashMap<Cell, u32> {
-        let mut temp = Board::new(self.width, self.height);
+    fn count_population(&self) -> HashMap<Color, u64> {
         let mut population = HashMap::new();
 
         for x in 0..self.width {
             for y in 0..self.height {
-                temp.set(x, y, self.count_surrounding(x, y));
-                *population.entry(self.cells[y as usize][x as usize]).or_insert(0) += 1;
+                if let Cell::Alive(c) = self.cells[y as usize][x as usize] {
+                    *population.entry(c).or_insert(0) += 1;
+                }
+            }
+        }
+
+        population
+    }
+
+    pub fn update(&mut self) {
+        let mut temp = Board::new(self.width, self.height);
+
+        for x in 0..self.width {
+            for y in 0..self.height {
+                temp.set(x, y, self.update_cell(x, y).0);
             }
         }
 
         self.cells = temp.cells;
-        population
     }
 
     pub fn render(&mut self) -> Result<()> {
@@ -163,7 +174,8 @@ impl Board {
         
         for r in self.cells.iter() {
             for c in r.iter() {
-                let test_c = match self.count_surrounding(x, y) {
+                let (cell, len) = self.update_cell(x, y);
+                let test_c = match cell {
                     Cell::Alive(col) => col,
                     Cell::Dead => Color::DarkGrey
                 };
@@ -174,7 +186,7 @@ impl Board {
                             //SetForegroundColor(*color),
                             SetForegroundColor(test_c),
                             SetBackgroundColor(*color),
-                            Print("+")
+                            Print(len.to_string())
                         )?;
                     },
                     Cell::Dead => {
@@ -182,7 +194,7 @@ impl Board {
                             ResetColor,
                             //SetForegroundColor(Color::DarkGrey),
                             SetForegroundColor(test_c),
-                            Print("+")
+                            Print(len.to_string())
                         )?;
                     }
                 }
@@ -209,8 +221,8 @@ impl Board {
 impl Game {
     pub fn new() -> Result<Game> {
         let (w, h) = size()?;
-        let mut board = Board::new(w, h);
-        let population = board.update();
+        let board = Board::new(w, h);
+        let population = board.count_population();
         Ok(Game {
             board,
             speed: time::Duration::from_millis(200),
@@ -237,21 +249,19 @@ impl Game {
             queue!(stdout(), Print(self.speed.as_millis().to_string()))?;
         }
 
-        for (cell, count) in self.population.iter() {
-            if let Cell::Alive(c) = cell {
-                let percent = format!("{:.4}%", *count as f64 / (self.board.width * self.board.height) as f64);
-                queue!(stdout(), 
-                    Print(" "),
-                    SetBackgroundColor(*c),
-                    SetForegroundColor(
-                        match c {
-                            Color::DarkGrey | Color::Grey => Color::White,
-                            _ => Color::DarkGrey
-                        }
-                    ),
-                    Print(percent),
-                    ResetColor)?;    
-            }
+        for (color, count) in self.population.iter().sorted() {
+            let percent = format!("{:.4}%", *count as f64 / (self.board.width * self.board.height) as f64);
+            queue!(stdout(), 
+                Print(" "),
+                SetBackgroundColor(*color),
+                SetForegroundColor(
+                    match color {
+                        Color::DarkGrey | Color::Grey => Color::White,
+                        _ => Color::Black
+                    }
+                ),
+                Print(percent),
+                ResetColor)?;    
         }
 
         Ok(())
@@ -266,12 +276,13 @@ impl Game {
 
         'main: loop {
             
+            self.population = self.board.count_population();
             self.render()?;
             stdout().flush()?;
 
             if !self.pause && last_update.elapsed() >= self.speed {
                 last_update = time::Instant::now();
-                self.population = self.board.update();
+                self.board.update();
             }
 
             while let Some(event) = Self::wait_event(zero) {
@@ -317,8 +328,11 @@ impl Game {
                     _ => {}
                 }
 
+                /*
+                self.population = self.board.count_population();
                 self.render()?;
                 stdout().flush()?;
+                */
             }
 
             thread::sleep(time::Duration::from_millis(15));
