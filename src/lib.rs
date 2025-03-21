@@ -31,6 +31,7 @@ use crossterm::{
     };
 use std::{
     collections::HashMap,
+    env::Args,
     io::{
         stdout,
         Result,
@@ -49,11 +50,15 @@ pub enum Cell {
     Dead
 }
 
-
 pub struct Board {
     pub width: u16,
     pub height: u16,
-    cells: Vec<Vec<Cell>>
+    pub cells: Vec<Vec<Cell>>
+}
+
+pub struct Config {
+    pub debug: bool,
+    pub wide: bool,
 }
 
 pub struct Game {
@@ -62,8 +67,27 @@ pub struct Game {
     pub pause: bool,
     pub color: Color,
     pub population: HashMap<Color, u64>,
+    pub config: Config,
 }
 
+
+impl Config {
+    pub fn new(args: Args) -> Config {
+        let mut debug = false;
+        let mut wide = false;
+        for arg in args {
+            if arg == "-debug" {
+                debug = true;
+            } else if arg == "-wide" {
+                wide = true;
+            }
+        }
+        Config {
+            debug,
+            wide
+        }
+    }
+}
 
 impl Board {
     pub fn new(width: u16, height: u16) -> Board {
@@ -74,13 +98,46 @@ impl Board {
         }
     }
 
+    pub fn random_cell(frac: u32) -> Cell {
+        let rn: u32 = rand::random();
+
+        if rn % frac == 0 {
+            let rn: u32 = rand::random();
+ 
+            return Cell::Alive(match rn % 8 {
+                0 => Color::White,
+                1 => Color::Red,
+                2 => Color::Yellow,
+                3 => Color::Green,
+                4 => Color::Blue,
+                5 => Color::Cyan,
+                6 => Color::Magenta,
+                _ => Color::DarkGrey,
+            });
+        }
+        Cell::Dead
+    }
+
     pub fn set(&mut self, x: u16, y: u16, cell: Cell) {
         if x < self.width && y < self.height {
             self.cells[y as usize][x as usize] = cell;
         }
     }
 
-    fn update_cell(&self, x: u16, y: u16) -> (Cell, u8) {
+    pub fn randomize(&mut self) {
+        self.clear();
+
+        let rn: u32 = rand::random();
+        let rn = (rn % 5) + 2;
+
+        for x in 0..self.width {
+            for y in 0..self.height {
+                self.cells[y as usize][x as usize] = Self::random_cell(rn);
+            }
+        }
+    }
+
+    fn update_cell(&self, x: u16, y: u16) -> Cell {
         let mut colors = HashMap::new();
         let mut count = 0;
         
@@ -103,41 +160,38 @@ impl Board {
             }
         }
 
-        let mut new_cell = Cell::Dead;
-        let mut len: u8 = 0;
         match self.cells[y as usize][x as usize] {
             Cell::Alive(c) => {
                 if count == 2 || count == 3 {
-                    new_cell = Cell::Alive(c);
+                    return Cell::Alive(c);
                 }
             },
             Cell::Dead => {
                 if count == 3 {
-                    len = colors.keys().len() as u8;
                     let colors: Vec<(Color, u8)> = colors.drain().collect();
 
-                    match len {
+                    match colors.len() {
                         1 => {
                             let (c, _) = colors[0];
-                            new_cell = Cell::Alive(c);
+                            return Cell::Alive(c);
                         },
                         2 => {
                             let (c1, n1) = colors[0];
                             let (c2, n2) = colors[1];
 
-                            new_cell = Cell::Alive(if n1 > n2 { c1 } else { c2 });
+                            return Cell::Alive(if n1 > n2 { c1 } else { c2 });
                         },
                         3 => {
                             let rn: u8 = rand::random();
                             let (c, _) = colors[(rn % 3) as usize];
-                            new_cell = Cell::Alive(c);
+                            return Cell::Alive(c);
                         },
                         _ => {}
                     }
                 }
             }
         }
-        (new_cell, len)
+        Cell::Dead
     }
 
     fn count_population(&self) -> HashMap<Color, u64> {
@@ -159,14 +213,14 @@ impl Board {
 
         for x in 0..self.width {
             for y in 0..self.height {
-                temp.set(x, y, self.update_cell(x, y).0);
+                temp.set(x, y, self.update_cell(x, y));
             }
         }
 
         self.cells = temp.cells;
     }
 
-    pub fn render(&mut self) -> Result<()> {
+    pub fn render(&mut self, debug: bool) -> Result<()> {
         
         let mut x = 0;
         let mut y = 0;
@@ -174,31 +228,49 @@ impl Board {
         
         for r in self.cells.iter() {
             for c in r.iter() {
-                let (cell, len) = self.update_cell(x, y);
-                let test_c = match cell {
-                    Cell::Alive(col) => col,
-                    Cell::Dead => Color::DarkGrey
-                };
-                match c {
-                    Cell::Alive(color) => {
-                        queue!(stdout(),
-                            ResetColor,
-                            //SetForegroundColor(*color),
-                            SetForegroundColor(test_c),
-                            SetBackgroundColor(*color),
-                            Print(len.to_string())
-                        )?;
-                    },
-                    Cell::Dead => {
-                        queue!(stdout(),
-                            ResetColor,
-                            //SetForegroundColor(Color::DarkGrey),
-                            SetForegroundColor(test_c),
-                            Print(len.to_string())
-                        )?;
+                if debug {
+                    let cell = self.update_cell(x, y);
+                    let test_c = match cell {
+                        Cell::Alive(col) => col,
+                        Cell::Dead => Color::DarkGrey
+                    };
+                    match c {
+                        Cell::Alive(color) => {
+                            queue!(stdout(),
+                                ResetColor,
+                                SetForegroundColor(test_c),
+                                SetBackgroundColor(*color),
+                                Print("+")
+                            )?;
+                        },
+                        Cell::Dead => {
+                            queue!(stdout(),
+                                ResetColor,
+                                SetForegroundColor(test_c),
+                                Print("+")
+                            )?;
+                        }
+                    }
+                    x += 1;
+                } else {
+                    match c {
+                        Cell::Alive(color) => {
+                            queue!(stdout(),
+                                ResetColor,
+                                SetForegroundColor(*color),
+                                SetBackgroundColor(*color),
+                                Print("@")
+                            )?;
+                        },
+                        Cell::Dead => {
+                            queue!(stdout(),
+                                ResetColor,
+                                SetForegroundColor(Color::DarkGrey),
+                                Print(".")
+                            )?;
+                        }
                     }
                 }
-                x += 1;
             }
             x = 0;
             y += 1;
@@ -219,7 +291,7 @@ impl Board {
 
 
 impl Game {
-    pub fn new() -> Result<Game> {
+    pub fn new(config: Config) -> Result<Game> {
         let (w, h) = size()?;
         let board = Board::new(w, h);
         let population = board.count_population();
@@ -229,11 +301,12 @@ impl Game {
             pause: true,
             color: Color::White,
             population,
+            config
         })
     }
 
     pub fn render(&mut self) -> Result<()> {
-        self.board.render()?;
+        self.board.render(self.config.debug)?;
 
         queue!(stdout(), 
             MoveTo(0, self.board.height-1),
@@ -245,23 +318,27 @@ impl Game {
 
         if self.pause {
             queue!(stdout(), Print("PAUSE"))?;
+        } else if self.speed == time::Duration::from_millis(0) {
+            queue!(stdout(), Print("ASAP"))?;
         } else {
             queue!(stdout(), Print(self.speed.as_millis().to_string()))?;
         }
 
-        for (color, count) in self.population.iter().sorted() {
-            let percent = format!("{:.4}%", *count as f64 / (self.board.width * self.board.height) as f64);
-            queue!(stdout(), 
-                Print(" "),
-                SetBackgroundColor(*color),
-                SetForegroundColor(
-                    match color {
-                        Color::DarkGrey | Color::Grey => Color::White,
-                        _ => Color::Black
-                    }
-                ),
-                Print(percent),
-                ResetColor)?;    
+        if self.config.debug {
+            for (color, count) in self.population.iter().sorted() {
+                let percent = format!("{:.4}%", *count as f64 / (self.board.width * self.board.height) as f64);
+                queue!(stdout(), 
+                    Print(" "),
+                    SetBackgroundColor(*color),
+                    SetForegroundColor(
+                        match color {
+                            Color::DarkGrey | Color::Grey => Color::White,
+                            _ => Color::Black
+                        }
+                    ),
+                    Print(percent),
+                    ResetColor)?; 
+            }
         }
 
         Ok(())
@@ -272,6 +349,9 @@ impl Game {
         enable_raw_mode()?;
 
         let zero = time::Duration::from_millis(0);
+        let ten_thousand = time::Duration::from_millis(10000);
+        let one_hundred = time::Duration::from_millis(100);
+
         let mut last_update = time::Instant::now();
 
         'main: loop {
@@ -291,8 +371,8 @@ impl Game {
                         match m_event.kind {
                             MouseEventKind::Down(btn) | MouseEventKind::Drag(btn) => {
                                 match btn {
-                                    MouseButton::Left =>    self.board.set(m_event.column, m_event.row, Cell::Alive(self.color)),
-                                    MouseButton::Right =>   self.board.set(m_event.column, m_event.row, Cell::Dead),
+                                    MouseButton::Left => self.board.set(m_event.column, m_event.row, Cell::Alive(self.color)),
+                                    MouseButton::Right => self.board.set(m_event.column, m_event.row, Cell::Dead),
                                     _ => {}
                                 }
                             },
@@ -316,11 +396,23 @@ impl Game {
                                         '6' => self.color = Color::Cyan,
                                         '7' => self.color = Color::Magenta,
                                         '8' => self.color = Color::DarkGrey,
+                                        'r' => self.board.randomize(),
                                         _ => {}
                                     }
                                 },
                                 KeyCode::Esc => break 'main,
                                 KeyCode::Backspace | KeyCode::Delete => self.board.clear(),
+                                KeyCode::Up => {
+                                    if self.speed < ten_thousand {
+                                        self.speed += one_hundred;
+                                    }
+                                },
+                                KeyCode::Down => {
+                                    if self.speed >=  one_hundred {
+                                        self.speed -= one_hundred;
+                                    }
+                                },
+                                KeyCode::Tab => self.config.debug = !self.config.debug,
                                 _ => {}
                             }
                         }    

@@ -1,8 +1,11 @@
 use conways::*;
-use std::io::Result;
+use std::{
+    io::Result,
+    env::args,
+};
 
 fn main() -> Result<()> {
-    let mut game = Game::new().unwrap();
+    let mut game = Game::new(Config::new(args())).unwrap();
 
     game.run()?;
 
