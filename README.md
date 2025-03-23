@@ -1,6 +1,6 @@
 # conways game of life
 
-[a colourful gif of conways game of life](img/example.gif)
+![a colourful gif of conways game of life](img/example.gif)
 
 now in colour!
 
@@ -41,4 +41,4 @@ cargo run -- [-wide|-debug|-score]
 | -debug | start with debug on |
 | -score | start with scoreboard on |
 
-[a striped diamond shaped turning into four gliders](img/glider.gif)
+![a striped diamond shaped turning into four gliders](img/glider.gif)
