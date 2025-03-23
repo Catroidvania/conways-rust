@@ -381,7 +381,7 @@ impl Game {
             let mut space = if self.config.wide { self.board.width * 2 } else { self.board.width } - 16;
             for (color, count) in self.population.iter().sorted_by(|a, b| Ord::cmp(&b.1, &a.1)) {
                 if space > 10 {
-                    let percent = format!("{:0>7.4}%", *count as f64 / (self.board.width * self.board.height) as f64);
+                    let percent = format!("{: >5.2}%", (*count as f64 / (self.board.width * self.board.height) as f64) * 100.0);
                     queue!(stdout(),
                         Print(" "),
                         SetBackgroundColor(*color),
@@ -393,7 +393,7 @@ impl Game {
                         ),
                         Print(percent),
                         ResetColor)?;
-                    space -= 9;
+                    space -= 7;
                 }
             }
         }
